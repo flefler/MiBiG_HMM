@@ -53,10 +53,21 @@ def align_sequences(fasta_files, output_dir):
     return aligned_files
 
 def build_hmm_profiles(fasta_files, output_dir):
+    hmm_dir = os.path.join(output_dir, "hmms")
+    os.makedirs(hmm_dir, exist_ok=True)
     for fasta_file in fasta_files:
+        # Check sequence length
+        sequences = list(SeqIO.parse(fasta_file, "fasta"))
+        if not sequences or len(sequences[0].seq) < 50:  # Check if file is empty or sequence is too short
+            print(f"Skipping HMM build for {fasta_file}: sequence too short (< 50 amino acids)")
+            continue
+        
         gene_name = os.path.splitext(os.path.basename(fasta_file))[0]
-        hmm_file = os.path.join(output_dir, f"{gene_name}.hmm")
-        subprocess.run(["hmmbuild", hmm_file, fasta_file], check=True)
+        hmm_file = os.path.join(hmm_dir, f"{gene_name}.hmm")
+        try:
+            subprocess.run(["hmmbuild", "--amino", hmm_file, fasta_file], check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as e:
+            print(f"Error building HMM for {fasta_file}: {e.stderr}")
 
 def create_metadata_sheet(gene_products, output_dir, metadata_filename):
     metadata_file = os.path.join(output_dir, metadata_filename)
@@ -67,11 +78,12 @@ def create_metadata_sheet(gene_products, output_dir, metadata_filename):
             writer.writerow([gene_name, product, gene_name])
 
 def concatenate_hmm_profiles(output_dir, final_hmm_name):
-    hmm_files = [f for f in os.listdir(output_dir) if f.endswith('.hmm')]
+    hmm_dir = os.path.join(output_dir, "hmms")
+    hmm_files = [f for f in os.listdir(hmm_dir) if f.endswith('.hmm')]
     final_hmm = os.path.join(output_dir, final_hmm_name)
     with open(final_hmm, 'wb') as outfile:
         for hmm_file in hmm_files:
-            with open(os.path.join(output_dir, hmm_file), 'rb') as infile:
+            with open(os.path.join(hmm_dir, hmm_file), 'rb') as infile:
                 outfile.write(infile.read())
     return final_hmm_name
 
@@ -89,13 +101,15 @@ def process_genbank_files(input_dir, output_dir):
             
             all_gene_products.update(gene_products)
     
-    create_fasta_files(all_gene_sequences, output_dir)
-    fasta_files = [os.path.join(output_dir, f) for f in os.listdir(output_dir) if f.endswith('.fasta')]
+    fasta_dir = os.path.join(output_dir, "fasta")
+    os.makedirs(fasta_dir, exist_ok=True)
+    create_fasta_files(all_gene_sequences, fasta_dir)
+    fasta_files = [os.path.join(fasta_dir, f) for f in os.listdir(fasta_dir) if f.endswith('.fasta')]
     
-    aligned_files = align_sequences(fasta_files, output_dir)
+    aligned_files = align_sequences(fasta_files, fasta_dir)
     build_hmm_profiles(aligned_files, output_dir)
     
-    final_hmm_name = "MiBiG_4.0.hmm"
+    final_hmm_name = "MiBiG_4.hmm"
     concatenate_hmm_profiles(output_dir, final_hmm_name)
     
     metadata_filename = os.path.splitext(final_hmm_name)[0] + ".tsv"
