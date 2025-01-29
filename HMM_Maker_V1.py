@@ -38,19 +38,25 @@ def align_sequences(fasta_files, output_dir):
             sequence_count = sum(1 for line in f if line.startswith('>'))
         
         if sequence_count > 1:
-            # Multiple sequences, perform alignment
+            # Multiple sequences, perform alignment using MAFFT G-INS-i
+            output_file = os.path.join(output_dir, f"{gene_name}_aligned.fasta")
             try:
-                subprocess.run(["muscle", "-align", fasta_file, "-output", fasta_file], 
+                result = subprocess.run(["mafft", "--globalpair", "--maxiterate", "1000", fasta_file], 
                                check=True, 
-                               stdout=subprocess.PIPE, 
-                               stderr=subprocess.PIPE)
+                               capture_output=True,
+                               text=True)
+                with open(output_file, 'w') as f:
+                    f.write(result.stdout)
             except subprocess.CalledProcessError as e:
                 print(f"Alignment failed for {fasta_file}")
-                print(f"STDOUT: {e.stdout.decode()}")
-                print(f"STDERR: {e.stderr.decode()}")
-        
-        aligned_files.append(fasta_file)
+                print(f"STDOUT: {e.stdout}")
+                print(f"STDERR: {e.stderr}")
+            aligned_files.append(output_file)
+        else:
+            # Single sequence, no alignment needed
+            aligned_files.append(fasta_file)
     return aligned_files
+
 
 def build_hmm_profiles(fasta_files, output_dir):
     hmm_dir = os.path.join(output_dir, "hmms")
